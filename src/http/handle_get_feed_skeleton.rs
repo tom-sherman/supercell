@@ -72,9 +72,15 @@ pub async fn handle_get_feed_skeleton(
             tracing::error!(error = ?err, "failed to validate JWT");
             return Ok(Json(FeedItemsView {
                 cursor: None,
-                feed: vec![FeedItemView {
-                    post: feed_control.deny.clone(),
-                }],
+                feed: feed_control
+                    .deny
+                    .as_ref()
+                    .map(|value| {
+                        vec![FeedItemView {
+                            post: value.clone(),
+                        }]
+                    })
+                    .unwrap_or(vec![]),
             })
             .into_response());
         }
@@ -84,9 +90,15 @@ pub async fn handle_get_feed_skeleton(
         if !feed_control.allowed.contains(&did) {
             return Ok(Json(FeedItemsView {
                 cursor: None,
-                feed: vec![FeedItemView {
-                    post: feed_control.deny.clone(),
-                }],
+                feed: feed_control
+                    .deny
+                    .as_ref()
+                    .map(|value| {
+                        vec![FeedItemView {
+                            post: value.clone(),
+                        }]
+                    })
+                    .unwrap_or(vec![]),
             })
             .into_response());
         }

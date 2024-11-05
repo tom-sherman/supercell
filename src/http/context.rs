@@ -9,7 +9,7 @@ use crate::storage::StoragePool;
 
 #[derive(Clone, Debug)]
 pub(crate) struct FeedControl {
-    pub(crate) deny: String,
+    pub(crate) deny: Option<String>,
     pub(crate) allowed: HashSet<String>,
 }
 
@@ -34,7 +34,7 @@ impl WebContext {
     pub fn new(
         pool: StoragePool,
         external_base: &str,
-        feeds: HashMap<String, (String, HashSet<String>)>,
+        feeds: HashMap<String, (Option<String>, HashSet<String>)>,
     ) -> Self {
         let feeds = feeds
             .into_iter()

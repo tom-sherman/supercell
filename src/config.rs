@@ -13,8 +13,13 @@ pub struct Feed {
     pub uri: String,
     pub name: String,
     pub description: String,
+
+    #[serde(default)]
     pub allow: HashSet<String>,
-    pub deny: String,
+
+    #[serde(default)]
+    pub deny: Option<String>,
+
     pub matchers: Vec<Matcher>,
 }
 

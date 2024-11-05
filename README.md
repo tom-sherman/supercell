@@ -13,7 +13,9 @@ The following environment variables are used:
 * `DATABASE_URL` - The URL of the database to use.
 * `JETSTREAM_HOSTNAME` - The hostname of the JetStream server to consume events from.
 * `ZSTD_DICTIONARY` - The path to the ZSTD dictionary to use.
-* `CONSUMER_TASK_ENABLE` - Whether or not to enable the consumer tasks.
+* `CONSUMER_TASK_ENABLE` - Whether or not to enable the consumer tasks. Default `true`.
+* `VMC_TASK_ENABLE` - Whether or not to enable the VMC (verification method cache) tasks. Default `true`.
+* `PLC_HOSTNAME` - The hostname of the PLC server to use for VMC tasks. Default `plc.directory`.
 * `FEEDS` - The path to the feeds configuration file.
 * `RUST_LOG` - Logging configuration. Defaults to `supercell=debug,info`
 
@@ -68,14 +70,6 @@ For example, the following json would match the `equal` matcher with both `$.tex
 The site [https://jsonpath.com/](https://jsonpath.com/) is a great resource for testing JSONPath queries.
 
 See the `config.example.yml` file for additional examples.
-
-# TODO
-
-* use i64, it's fine
-* possible scoring function for queries
-* add likes
-* support deletes
-* document how to register a feed
 
 # License
 

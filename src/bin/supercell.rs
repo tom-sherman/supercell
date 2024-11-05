@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     let pool = SqlitePool::connect(&config.database_url).await?;
     sqlx::migrate!().run(&pool).await?;
 
-    let feeds: HashMap<String, (String, HashSet<String>)> = config
+    let feeds: HashMap<String, (Option<String>, HashSet<String>)> = config
         .feeds
         .feeds
         .iter()
