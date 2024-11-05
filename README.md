@@ -30,29 +30,14 @@ feeds:
   - path: "$.did"
     value: "did:plc:tgudj2fjm77pzkuawquqhsxm"
     type: equal
-  - path: "$.commit.record.text"
-    values: ["smoke", "signal"]
-    type: sequence
   - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#tag')].tag"
     values: ["smoke", "signal"]
     type: sequence
-  - path: "$.commit.record.reply.parent.uri"
-    value: "at://did:plc:tgudj2fjm77pzkuawquqhsxm/app.bsky.feed.post/"
-    type: prefix
-  - path: "$.commit.record.reply.root.uri"
-    value: "at://did:plc:tgudj2fjm77pzkuawquqhsxm/app.bsky.feed.post/"
-    type: prefix
   - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#link')].uri"
     value: "https://smokesignal.events/"
     type: prefix
-  - path: "$.commit.record.facets[*].features[?(@['$type'] == 'app.bsky.richtext.facet#mention')].did"
-    value: "did:plc:tgudj2fjm77pzkuawquqhsxm"
-    type: equal
   - path: "$.commit.record.embed.external.uri"
     value: "https://smokesignal.events/"
-    type: prefix
-  - path: "$.commit.record.embed.record.uri"
-    value: "at://did:plc:tgudj2fjm77pzkuawquqhsxm/"
     type: prefix
 ```
 
