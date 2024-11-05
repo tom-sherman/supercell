@@ -14,50 +14,8 @@ pub mod model {
     pub struct FeedContent {
         pub feed_id: String,
         pub uri: String,
-        pub indexed_at: u32,
-        pub indexed_at_more: u32,
+        pub indexed_at: i64,
         pub cid: String,
-    }
-
-    impl FeedContent {
-        pub fn new(feed_id: String, uri: String, time_us: u64, cid: String) -> Self {
-            // Are their better ways to do this? Probably.
-            let time_us_bytes = time_us.to_be_bytes();
-            let indexed_at = u32::from_be_bytes([
-                time_us_bytes[0],
-                time_us_bytes[1],
-                time_us_bytes[2],
-                time_us_bytes[3],
-            ]);
-            let indexed_at_more = u32::from_be_bytes([
-                time_us_bytes[4],
-                time_us_bytes[5],
-                time_us_bytes[6],
-                time_us_bytes[7],
-            ]);
-
-            Self {
-                feed_id,
-                uri,
-                indexed_at,
-                indexed_at_more,
-                cid,
-            }
-        }
-        pub fn time_us(&self) -> u64 {
-            let indexed_at_bytes = self.indexed_at.to_be_bytes();
-            let indexed_at_more_bytes = self.indexed_at_more.to_be_bytes();
-            u64::from_be_bytes([
-                indexed_at_bytes[0],
-                indexed_at_bytes[1],
-                indexed_at_bytes[2],
-                indexed_at_bytes[3],
-                indexed_at_more_bytes[0],
-                indexed_at_more_bytes[1],
-                indexed_at_more_bytes[2],
-                indexed_at_more_bytes[3],
-            ])
-        }
     }
 }
 
@@ -68,11 +26,10 @@ pub async fn feed_content_insert(
     let mut tx = pool.begin().await.context("failed to begin transaction")?;
 
     let now = Utc::now();
-    sqlx::query("INSERT OR REPLACE INTO feed_content (feed_id, uri, indexed_at, indexed_at_more, cid, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    sqlx::query("INSERT OR REPLACE INTO feed_content (feed_id, uri, indexed_at, cid, updated_at) VALUES (?, ?, ?, ?, ?)")
         .bind(&feed_content.feed_id)
         .bind(&feed_content.uri)
         .bind(feed_content.indexed_at)
-        .bind(feed_content.indexed_at_more)
         .bind(&feed_content.cid)
         .bind(now)
         .execute(tx.as_mut())
@@ -85,25 +42,24 @@ pub async fn feed_content_paginate(
     pool: &StoragePool,
     feed_uri: &str,
     limit: Option<u16>,
-    cursor: Option<(u64, u32, u32, String)>,
+    cursor: Option<(i64, String)>,
 ) -> Result<Vec<FeedContent>> {
     let mut tx = pool.begin().await.context("failed to begin transaction")?;
 
     let limit = limit.unwrap_or(20).clamp(1, 100);
 
-    let results = if let Some((_time_us, indexed_at, indexed_at_more, cid)) = cursor {
-        let query = "SELECT * FROM feed_content WHERE feed_id = ? AND (indexed_at, indexed_at_more, cid) < (?, ?, ?) ORDER BY indexed_at DESC, indexed_at_more DESC, cid DESC LIMIT ?";
+    let results = if let Some((indexed_at, cid)) = cursor {
+        let query = "SELECT * FROM feed_content WHERE feed_id = ? AND (indexed_at, cid) < (?, ?) ORDER BY indexed_at DESC, cid DESC LIMIT ?";
 
         sqlx::query_as::<_, FeedContent>(query)
             .bind(feed_uri)
             .bind(indexed_at)
-            .bind(indexed_at_more)
             .bind(cid)
             .bind(limit)
             .fetch_all(tx.as_mut())
             .await?
     } else {
-        let query = "SELECT * FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC, indexed_at_more DESC, cid DESC LIMIT ?";
+        let query = "SELECT * FROM feed_content WHERE feed_id = ? ORDER BY indexed_at DESC, cid DESC LIMIT ?";
 
         sqlx::query_as::<_, FeedContent>(query)
             .bind(feed_uri)
@@ -117,11 +73,7 @@ pub async fn feed_content_paginate(
     Ok(results)
 }
 
-pub async fn consumer_control_insert(
-    pool: &StoragePool,
-    source: &str,
-    time_us: &str,
-) -> Result<()> {
+pub async fn consumer_control_insert(pool: &StoragePool, source: &str, time_us: i64) -> Result<()> {
     let mut tx = pool.begin().await.context("failed to begin transaction")?;
 
     let now = Utc::now();
@@ -137,11 +89,11 @@ pub async fn consumer_control_insert(
     tx.commit().await.context("failed to commit transaction")
 }
 
-pub async fn consumer_control_get(pool: &StoragePool, source: &str) -> Result<Option<u64>> {
+pub async fn consumer_control_get(pool: &StoragePool, source: &str) -> Result<Option<i64>> {
     let mut tx = pool.begin().await.context("failed to begin transaction")?;
 
     let result =
-        sqlx::query_scalar::<_, String>("SELECT time_us FROM consumer_control WHERE source = ?")
+        sqlx::query_scalar::<_, i64>("SELECT time_us FROM consumer_control WHERE source = ?")
             .bind(source)
             .fetch_optional(tx.as_mut())
             .await
@@ -149,7 +101,7 @@ pub async fn consumer_control_get(pool: &StoragePool, source: &str) -> Result<Op
 
     tx.commit().await.context("failed to commit transaction")?;
 
-    Ok(result.and_then(|value| value.parse::<u64>().ok()))
+    Ok(result)
 }
 
 pub async fn verifcation_method_insert(
@@ -226,12 +178,13 @@ mod tests {
 
     #[sqlx::test]
     async fn record_feed_content(pool: SqlitePool) -> sqlx::Result<()> {
-        let record = super::model::FeedContent::new(
-            "feed".to_string(),
-            "at://did:plc:qadlgs4xioohnhi2jg54mqds/app.bsky.feed.post/3la3bqjg4hx2n".to_string(),
-            1730673934229172_u64,
-            "bafyreih74qdc6zskq7yarqi3xm634vnubf4g3ac5ieegbvakprxpjnsj74".to_string(),
-        );
+        let record = super::model::FeedContent {
+            feed_id: "feed".to_string(),
+            uri: "at://did:plc:qadlgs4xioohnhi2jg54mqds/app.bsky.feed.post/3la3bqjg4hx2n"
+                .to_string(),
+            indexed_at: 1730673934229172_i64,
+            cid: "bafyreih74qdc6zskq7yarqi3xm634vnubf4g3ac5ieegbvakprxpjnsj74".to_string(),
+        };
         super::feed_content_insert(&pool, &record)
             .await
             .expect("failed to insert record");
@@ -246,14 +199,14 @@ mod tests {
             records[0].uri,
             "at://did:plc:qadlgs4xioohnhi2jg54mqds/app.bsky.feed.post/3la3bqjg4hx2n"
         );
-        assert_eq!(records[0].time_us(), 1730673934229172_u64);
+        assert_eq!(records[0].indexed_at, 1730673934229172_i64);
 
         Ok(())
     }
 
     #[sqlx::test]
     async fn consumer_control(pool: SqlitePool) -> sqlx::Result<()> {
-        super::consumer_control_insert(&pool, "foo", "1730673934229172")
+        super::consumer_control_insert(&pool, "foo", 1730673934229172_i64)
             .await
             .expect("failed to insert record");
 
@@ -261,10 +214,10 @@ mod tests {
             super::consumer_control_get(&pool, "foo")
                 .await
                 .expect("failed to get record"),
-            Some(1730673934229172_u64)
+            Some(1730673934229172_i64)
         );
 
-        super::consumer_control_insert(&pool, "foo", "1730673934229173")
+        super::consumer_control_insert(&pool, "foo", 1730673934229173_i64)
             .await
             .expect("failed to insert record");
 
@@ -272,7 +225,7 @@ mod tests {
             super::consumer_control_get(&pool, "foo")
                 .await
                 .expect("failed to get record"),
-            Some(1730673934229173_u64)
+            Some(1730673934229173_i64)
         );
 
         Ok(())

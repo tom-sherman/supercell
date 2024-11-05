@@ -96,7 +96,7 @@ impl ConsumerTask {
         let sleeper = sleep(interval);
         tokio::pin!(sleeper);
 
-        let mut time_usec = 0u64;
+        let mut time_usec = 0i64;
 
         loop {
             tokio::select! {
@@ -104,7 +104,7 @@ impl ConsumerTask {
                     break;
                 },
                 () = &mut sleeper => {
-                        consumer_control_insert(&self.pool, &self.config.jetstream_hostname, &time_usec.to_string()).await?;
+                        consumer_control_insert(&self.pool, &self.config.jetstream_hostname, time_usec).await?;
                         sleeper.as_mut().reset(Instant::now() + interval);
                 },
                 item = client.next() => {
@@ -164,7 +164,12 @@ impl ConsumerTask {
                         if feed_matcher.matches(&event_value) {
                             tracing::debug!(feed_id = ?feed_matcher.feed, "matched event");
                             if let Some((uri, cid)) = model::to_post_strong_ref(&event) {
-                                let feed_content = storage::model::FeedContent::new(feed_matcher.feed.clone(), uri, event.clone().time_us, cid);
+                                let feed_content = storage::model::FeedContent{
+                                    feed_id: feed_matcher.feed.clone(),
+                                    uri,
+                                    indexed_at: event.clone().time_us,
+                                    cid,
+                                };
                                 feed_content_insert(&self.pool, &feed_content).await?;
                             }
                         }
@@ -200,7 +205,7 @@ pub(crate) mod model {
             max_message_size_bytes: u64,
 
             #[serde(skip_serializing_if = "Option::is_none")]
-            cursor: Option<u64>,
+            cursor: Option<i64>,
         },
     }
 
@@ -273,7 +278,7 @@ pub(crate) mod model {
     pub(crate) struct Event {
         pub(crate) did: String,
         pub(crate) kind: String,
-        pub(crate) time_us: u64,
+        pub(crate) time_us: i64,
         pub(crate) commit: Option<CommitOp>,
     }
 

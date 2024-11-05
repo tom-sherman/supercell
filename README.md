@@ -72,7 +72,6 @@ See the `config.example.yml` file for additional examples.
 # TODO
 
 * use i64, it's fine
-* look up keys on startup
 * possible scoring function for queries
 * add likes
 * support deletes

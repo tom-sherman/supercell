@@ -58,7 +58,7 @@ pub async fn handle_get_feed_skeleton(
 
     let feed_control = feed_control.unwrap();
 
-    if feed_control.allowed.len() > 0 {
+    if !feed_control.allowed.is_empty() {
         let authorization = headers.get("Authorization").and_then(|value| {
             value
                 .to_str()
@@ -104,7 +104,7 @@ pub async fn handle_get_feed_skeleton(
     let cursor = feed_items
         .iter()
         .last()
-        .map(|last_feed_item| format!("{},{}", last_feed_item.time_us(), last_feed_item.cid));
+        .map(|last_feed_item| format!("{},{}", last_feed_item.indexed_at, last_feed_item.cid));
 
     let feed_item_views = feed_items
         .iter()
@@ -197,7 +197,7 @@ async fn did_from_jwt(
     Ok(claims.iss)
 }
 
-fn parse_cursor(value: Option<String>) -> Option<(u64, u32, u32, String)> {
+fn parse_cursor(value: Option<String>) -> Option<(i64, String)> {
     let value = value.as_ref()?;
 
     let parts = value.split(",").collect::<Vec<&str>>();
@@ -205,24 +205,11 @@ fn parse_cursor(value: Option<String>) -> Option<(u64, u32, u32, String)> {
         return None;
     }
 
-    let time_us = parts[0].parse::<u64>();
+    let time_us = parts[0].parse::<i64>();
     if time_us.is_err() {
         return None;
     }
     let time_us = time_us.unwrap();
 
-    let time_us_bytes = time_us.to_be_bytes();
-    let indexed_at = u32::from_be_bytes([
-        time_us_bytes[0],
-        time_us_bytes[1],
-        time_us_bytes[2],
-        time_us_bytes[3],
-    ]);
-    let indexed_at_more = u32::from_be_bytes([
-        time_us_bytes[4],
-        time_us_bytes[5],
-        time_us_bytes[6],
-        time_us_bytes[7],
-    ]);
-    Some((time_us, indexed_at, indexed_at_more, parts[1].to_string()))
+    Some((time_us, parts[1].to_string()))
 }
