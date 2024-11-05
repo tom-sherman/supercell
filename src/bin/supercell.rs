@@ -1,0 +1,131 @@
+use anyhow::Result;
+use sqlx::SqlitePool;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::env;
+use tokio::net::TcpListener;
+use tokio::signal;
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
+use tracing_subscriber::prelude::*;
+
+use supercell::consumer::ConsumerTask;
+use supercell::consumer::ConsumerTaskConfig;
+use supercell::http::context::WebContext;
+use supercell::http::server::build_router;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "supercell=debug,info".into()),
+        ))
+        .with(tracing_subscriber::fmt::layer().pretty())
+        .init();
+
+    let version = supercell::config::version()?;
+
+    env::args().for_each(|arg| {
+        if arg == "--version" {
+            println!("{}", version);
+            std::process::exit(0);
+        }
+    });
+
+    let config = supercell::config::Config::new()?;
+
+    let pool = SqlitePool::connect(&config.database_url).await?;
+    sqlx::migrate!().run(&pool).await?;
+
+    let feeds: HashMap<String, (String, HashSet<String>)> = config
+        .feeds
+        .feeds
+        .iter()
+        .map(|feed| (feed.uri.clone(), (feed.deny.clone(), feed.allow.clone())))
+        .collect();
+
+    let web_context = WebContext::new(pool.clone(), config.external_base.as_str(), feeds);
+
+    let app = build_router(web_context.clone());
+
+    let tracker = TaskTracker::new();
+    let token = CancellationToken::new();
+
+    {
+        let tracker = tracker.clone();
+        let inner_token = token.clone();
+
+        let ctrl_c = async {
+            signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+
+        let terminate = async {
+            signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        tokio::spawn(async move {
+            tokio::select! {
+                () = inner_token.cancelled() => { },
+                _ = terminate => {},
+                _ = ctrl_c => {},
+            }
+
+            tracker.close();
+            inner_token.cancel();
+        });
+    }
+
+    {
+        let inner_config = config.clone();
+        let task_enable = *inner_config.consumer_task_enable.as_ref();
+        if task_enable {
+            let consumer_task_config = ConsumerTaskConfig {
+                zstd_dictionary_location: inner_config.zstd_dictionary.clone(),
+                jetstream_hostname: inner_config.jetstream_hostname.clone(),
+                feeds: inner_config.feeds.clone(),
+            };
+            let task = ConsumerTask::new(pool.clone(), consumer_task_config, token.clone())?;
+            let inner_token = token.clone();
+            tracker.spawn(async move {
+                if let Err(err) = task.run_background().await {
+                    tracing::warn!(error = ?err, "consumer task error");
+                }
+                inner_token.cancel();
+            });
+        }
+    }
+
+    {
+        let inner_config = config.clone();
+        let http_port = *inner_config.http_port.as_ref();
+        let inner_token = token.clone();
+        tracker.spawn(async move {
+            let listener = TcpListener::bind(&format!("0.0.0.0:{}", http_port))
+                .await
+                .unwrap();
+
+            let shutdown_token = inner_token.clone();
+            let result = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    tokio::select! {
+                        () = shutdown_token.cancelled() => { }
+                    }
+                    tracing::info!("axum graceful shutdown complete");
+                })
+                .await;
+            if let Err(err) = result {
+                tracing::error!("axum task failed: {}", err);
+            }
+
+            inner_token.cancel();
+        });
+    }
+
+    tracker.wait().await;
+
+    Ok(())
+}

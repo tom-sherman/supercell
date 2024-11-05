@@ -1,0 +1,16 @@
+[Unit]
+Description=Supercell
+Documentation=https://github.com/astrenoxcoop/supercell
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/var/lib/supercell
+ExecStart=/usr/bin/docker compose --file /var/lib/supercell/docker-compose.yml up --detach
+ExecStop=/usr/bin/docker compose --file /var/lib/supercell/docker-compose.yml stop
+
+[Install]
+WantedBy=default.target
+

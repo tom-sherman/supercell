@@ -1,0 +1,15 @@
+version: '3.9'
+services:
+  supercell:
+    labels: [ "com.centurylinklabs.watchtower.scope=supercell" ]
+    image: supercell:latest
+    restart: unless-stopped
+    ports:
+    - "127.0.0.1:4050:4050"
+    volumes:
+      - type: bind
+        source: /var/lib/supercell/database.db
+        target: /var/lib/supercell/database.db
+    env_file:
+      - /var/lib/supercell/production.env
+
