@@ -58,36 +58,38 @@ pub async fn handle_get_feed_skeleton(
 
     let feed_control = feed_control.unwrap();
 
-    let authorization = headers.get("Authorization").and_then(|value| {
-        value
-            .to_str()
-            .map(|inner_value| inner_value.to_string())
-            .ok()
-    });
+    if feed_control.allowed.len() > 0 {
+        let authorization = headers.get("Authorization").and_then(|value| {
+            value
+                .to_str()
+                .map(|inner_value| inner_value.to_string())
+                .ok()
+        });
 
-    let did = did_from_jwt(&web_context.pool, &web_context.external_base, authorization).await;
+        let did = did_from_jwt(&web_context.pool, &web_context.external_base, authorization).await;
 
-    if let Err(err) = did {
-        tracing::error!(error = ?err, "failed to validate JWT");
-        return Ok(Json(FeedItemsView {
-            cursor: None,
-            feed: vec![FeedItemView {
-                post: feed_control.deny.clone(),
-            }],
-        })
-        .into_response());
-    }
+        if let Err(err) = did {
+            tracing::error!(error = ?err, "failed to validate JWT");
+            return Ok(Json(FeedItemsView {
+                cursor: None,
+                feed: vec![FeedItemView {
+                    post: feed_control.deny.clone(),
+                }],
+            })
+            .into_response());
+        }
 
-    let did = did.unwrap();
+        let did = did.unwrap();
 
-    if !feed_control.allowed.contains(&did) {
-        return Ok(Json(FeedItemsView {
-            cursor: None,
-            feed: vec![FeedItemView {
-                post: feed_control.deny.clone(),
-            }],
-        })
-        .into_response());
+        if !feed_control.allowed.contains(&did) {
+            return Ok(Json(FeedItemsView {
+                cursor: None,
+                feed: vec![FeedItemView {
+                    post: feed_control.deny.clone(),
+                }],
+            })
+            .into_response());
+        }
     }
 
     let parsed_cursor = parse_cursor(feed_params.cursor);
