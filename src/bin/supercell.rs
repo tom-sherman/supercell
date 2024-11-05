@@ -3,6 +3,7 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
+use supercell::vmc::VerificationMethodCacheTask;
 use tokio::net::TcpListener;
 use tokio::signal;
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -33,6 +34,17 @@ async fn main() -> Result<()> {
 
     let config = supercell::config::Config::new()?;
 
+    let mut client_builder = reqwest::Client::builder();
+    for ca_certificate in config.certificate_bundles.as_ref() {
+        tracing::info!("Loading CA certificate: {:?}", ca_certificate);
+        let cert = std::fs::read(ca_certificate)?;
+        let cert = reqwest::Certificate::from_pem(&cert)?;
+        client_builder = client_builder.add_root_certificate(cert);
+    }
+
+    client_builder = client_builder.user_agent(config.user_agent.clone());
+    let http_client = client_builder.build()?;
+
     let pool = SqlitePool::connect(&config.database_url).await?;
     sqlx::migrate!().run(&pool).await?;
 
@@ -42,6 +54,11 @@ async fn main() -> Result<()> {
         .iter()
         .map(|feed| (feed.uri.clone(), (feed.deny.clone(), feed.allow.clone())))
         .collect();
+
+    let all_dids = feeds
+        .iter()
+        .flat_map(|(_, (_, allow))| allow.iter().cloned())
+        .collect::<HashSet<String>>();
 
     let web_context = WebContext::new(pool.clone(), config.external_base.as_str(), feeds);
 
@@ -84,6 +101,7 @@ async fn main() -> Result<()> {
         let task_enable = *inner_config.consumer_task_enable.as_ref();
         if task_enable {
             let consumer_task_config = ConsumerTaskConfig {
+                user_agent: inner_config.user_agent.clone(),
                 zstd_dictionary_location: inner_config.zstd_dictionary.clone(),
                 jetstream_hostname: inner_config.jetstream_hostname.clone(),
                 feeds: inner_config.feeds.clone(),
@@ -92,6 +110,28 @@ async fn main() -> Result<()> {
             let inner_token = token.clone();
             tracker.spawn(async move {
                 if let Err(err) = task.run_background().await {
+                    tracing::warn!(error = ?err, "consumer task error");
+                }
+                inner_token.cancel();
+            });
+        }
+    }
+
+    {
+        let inner_config = config.clone();
+        let task_enable = *inner_config.vmc_task_enable.as_ref();
+        if task_enable {
+            let task = VerificationMethodCacheTask::new(
+                pool.clone(),
+                http_client,
+                inner_config.plc_hostname.clone(),
+                all_dids,
+                token.clone(),
+            );
+            task.main().await?;
+            let inner_token = token.clone();
+            tracker.spawn(async move {
+                if let Err(err) = task.run_background(chrono::Duration::hours(4)).await {
                     tracing::warn!(error = ?err, "consumer task error");
                 }
                 inner_token.cancel();

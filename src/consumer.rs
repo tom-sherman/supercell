@@ -3,6 +3,7 @@ use std::str::FromStr;
 use anyhow::{Context, Result};
 use futures_util::SinkExt;
 use futures_util::StreamExt;
+use http::HeaderValue;
 use http::Uri;
 use tokio::time::{sleep, Instant};
 use tokio_util::sync::CancellationToken;
@@ -20,6 +21,7 @@ const MAX_MESSAGE_SIZE: usize = 25000;
 
 #[derive(Clone)]
 pub struct ConsumerTaskConfig {
+    pub user_agent: String,
     pub zstd_dictionary_location: String,
     pub jetstream_hostname: String,
     pub feeds: config::Feeds,
@@ -65,6 +67,10 @@ impl ConsumerTask {
         .context("invalid jetstream URL")?;
 
         let (mut client, _) = ClientBuilder::from_uri(uri)
+            .add_header(
+                http::header::USER_AGENT,
+                HeaderValue::from_str(&self.config.user_agent)?,
+            )
             .connect()
             .await
             .map_err(|err| anyhow::Error::new(err).context("cannot connect to jetstream"))?;

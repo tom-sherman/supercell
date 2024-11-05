@@ -20,3 +20,4 @@ jetstream_zstd_dictionary
 
 # release hooks
 create-release-*.sh
+.tmp.release_info

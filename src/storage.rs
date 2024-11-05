@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::prelude::*;
+use chrono::{prelude::*, Duration};
 use sqlx::{Pool, Sqlite};
 
 use model::FeedContent;
@@ -168,6 +168,20 @@ pub async fn verifcation_method_insert(
     .bind(now)
     .execute(tx.as_mut())
         .await.context("failed to update verification method cache")?;
+
+    tx.commit().await.context("failed to commit transaction")
+}
+
+pub async fn verification_method_cleanup(pool: &StoragePool) -> Result<()> {
+    let mut tx = pool.begin().await.context("failed to begin transaction")?;
+
+    let now = Utc::now();
+    let seven_days_ago = now - Duration::days(7);
+    sqlx::query("DELETE FROM verification_method_cache WHERE updated_at < ?")
+        .bind(seven_days_ago)
+        .execute(tx.as_mut())
+        .await
+        .context("failed to delete old verification method cache records")?;
 
     tx.commit().await.context("failed to commit transaction")
 }

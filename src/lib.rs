@@ -5,3 +5,4 @@ pub mod errors;
 pub mod http;
 pub mod matcher;
 pub mod storage;
+pub mod vmc;

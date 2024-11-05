@@ -48,6 +48,8 @@ pub struct Config {
     pub database_url: String,
     pub certificate_bundles: CertificateBundles,
     pub consumer_task_enable: TaskEnable,
+    pub vmc_task_enable: TaskEnable,
+    pub plc_hostname: String,
     pub user_agent: String,
     pub zstd_dictionary: String,
     pub jetstream_hostname: String,
@@ -56,7 +58,7 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Result<Self> {
-        let http_port: HttpPort = default_env("HTTP_PORT", "4040").try_into()?;
+        let http_port: HttpPort = default_env("HTTP_PORT", "4050").try_into()?;
         let external_base = require_env("EXTERNAL_BASE")?;
 
         let database_url = default_env("DATABASE_URL", "sqlite://development.db");
@@ -68,7 +70,11 @@ impl Config {
         let zstd_dictionary = require_env("ZSTD_DICTIONARY")?;
 
         let consumer_task_enable: TaskEnable =
-            default_env("CONSUMER_TASK_ENABLE", "false").try_into()?;
+            default_env("CONSUMER_TASK_ENABLE", "true").try_into()?;
+
+        let vmc_task_enable: TaskEnable = default_env("VMC_TASK_ENABLE", "true").try_into()?;
+
+        let plc_hostname = default_env("PLC_HOSTNAME", "plc.directory");
 
         let default_user_agent = format!(
             "supercell ({}; +https://github.com/astrenoxcoop/supercell)",
@@ -86,6 +92,8 @@ impl Config {
             database_url,
             certificate_bundles,
             consumer_task_enable,
+            vmc_task_enable,
+            plc_hostname,
             user_agent,
             jetstream_hostname,
             zstd_dictionary,
