@@ -88,7 +88,11 @@ impl VerificationMethodCacheTask {
     }
 
     async fn plc_query(&self, did: &str) -> Result<String> {
-        let url = format!("https://{}/{}", self.plc_hostname, did);
+        let url = if let Some(hostname) = did.strip_prefix("did:web:") {
+            format!("https://{}/.well-known/did.json", hostname)
+        } else {
+            format!("https://{}/{}", self.plc_hostname, did)
+        };
 
         let resolved_did: ResolvedPlcDid = self
             .http_client
