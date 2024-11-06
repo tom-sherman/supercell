@@ -1,4 +1,7 @@
+use std::path::PathBuf;
+
 use anyhow::{Context, Result};
+use boa_engine::JsValue;
 use serde_json_path::JsonPath;
 
 use crate::config;
@@ -180,6 +183,53 @@ impl Matcher for SequenceMatcher {
     }
 }
 
+pub enum JavaScriptMatcher {
+    Inline(String),
+    Module(PathBuf),
+}
+
+impl Matcher for JavaScriptMatcher {
+    fn matches(&self, value: &serde_json::Value) -> bool {
+        let mut context = boa_engine::Context::default();
+
+        match self {
+            JavaScriptMatcher::Inline(expression) => {
+                if context
+                    .eval(boa_engine::Source::from_bytes(
+                        format!("const record = {};", value.to_string()).as_bytes(),
+                    ))
+                    .is_err()
+                {
+                    return false;
+                }
+
+                let result = context.eval(boa_engine::Source::from_bytes(expression));
+
+                if result.is_err() {
+                    eprintln!("error evaluating js expression: {:?}", result);
+                }
+
+                result.map_or(false, |value| js_value_is_truthy(&value))
+            }
+            JavaScriptMatcher::Module(_) => todo!(),
+        }
+    }
+}
+
+fn js_value_is_truthy(value: &JsValue) -> bool {
+    match value {
+        JsValue::Boolean(value) => *value,
+        JsValue::Null => false,
+        JsValue::Undefined => false,
+        JsValue::String(str) => !str.is_empty(),
+        JsValue::Rational(n) => *n != 0.0,
+        JsValue::Integer(n) => *n != 0,
+        JsValue::BigInt(n) => *n != 0,
+        JsValue::Object(_) => true,
+        JsValue::Symbol(_) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,5 +399,52 @@ mod tests {
             SequenceMatcher::new(&vec!["smoke".to_string(), "signal".to_string()], "$.text")
                 .expect("matcher is valid");
         assert_eq!(matcher.matches(&value), false);
+    }
+
+    #[test]
+    fn js_inline_matcher() {
+        let raw_json = r#"{
+            "did": "did:plc:tgudj2fjm77pzkuawquqhsxm",
+            "time_us": 1730491093829414,
+            "kind": "commit",
+            "commit": {
+                "rev": "3l7vxhiuibq2u",
+                "operation": "create",
+                "collection": "app.bsky.feed.post",
+                "rkey": "3l7vxhiu4kq2u",
+                "record": {
+                    "$type": "app.bsky.feed.post",
+                    "createdAt": "2024-11-01T19:58:12.980Z",
+                    "langs": ["en"],
+                    "text": "hey dnd question, what does a 45 on a stealth check look like",
+                    "facets": [
+                        {
+                            "features": [{"$type": "app.bsky.richtext.facet#tag", "tag": "dungeonsanddragons"}],
+                            "index": { "byteEnd": 1, "byteStart": 0 }
+                        },
+                        {
+                            "features": [{"$type": "app.bsky.richtext.facet#tag", "tag": "gaming"}],
+                            "index": { "byteEnd": 1, "byteStart": 0 }
+                        }
+                    ]
+                },
+                "cid": "bafyreide7jpu67vvkn4p2iznph6frbwv6vamt7yg5duppqjqggz4sdfik4"
+            }
+        }"#;
+
+        let value: serde_json::Value = serde_json::from_str(raw_json).expect("json is valid");
+
+        let tests = vec![
+            ("record.commit", true),
+            (
+                "record.commit.collection.split('.').at(-1) === 'post'",
+                true,
+            ),
+        ];
+
+        for (code, result) in tests {
+            let matcher = JavaScriptMatcher::Inline(code.to_string());
+            assert_eq!(matcher.matches(&value), result);
+        }
     }
 }
